@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minehut Server List</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f0f5;
+            margin: 0;
+            padding: 0;
+        }
+
+        header {
+            background-color: #282c34;
+            color: white;
+            padding: 20px 0;
+            text-align: center;
+            font-size: 24px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        #total-servers {
+            margin-top: 10px;
+            font-size: 18px;
+            text-align: center;
+        }
+
+        .green-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background-color: #4CAF50;
+            border-radius: 50%;
+            margin-left: 10px;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+
+        .filter-bar {
+            text-align: center;
+            padding: 20px;
+            background-color: #fff;
+            box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .filter-bar input, .filter-bar select {
+            padding: 10px;
+            font-size: 16px;
+            margin-right: 10px;
+            border: 2px solid #ccc;
+            border-radius: 5px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        .filter-bar input:focus, .filter-bar select:focus {
+            border-color: #4CAF50;
+        }
+
+        .server-list {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .server-card {
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            width: 300px;
+            position: relative;
+            transition: transform 0.3s ease, background-color 0.3s ease;
+        }
+
+        .server-card:hover {
+            transform: scale(1.05);
+            cursor: pointer;
+        }
+
+        .server-header {
+            font-weight: bold;
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+
+        .motd {
+            margin: 10px 0;
+            font-style: italic;
+        }
+
+        .categories {
+            font-size: 12px;
+            color: gray;
+        }
+
+        .player-count {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+
+        .server-card .label {
+            font-weight: bold;
+        }
+
+        .high-players {
+            background-color: #f0c929;
+        }
+
+        .pinned {
+            border: 2px solid #FFD700;
+            background-color: #fffbea;
+        }
+
+        .popup {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.5);
+            padding: 20px;
+            z-index: 1000;
+        }
+
+        .popup h3 {
+            margin-top: 0;
+        }
+
+        .popup button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            margin: 10px 0;
+            border: none;
+            cursor: pointer;
+        }
+
+        .popup button:hover {
+            background-color: #45a049;
+        }
+
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+    </style>
+</head>
+<body>
+
+<header>Minehut Server List</header>
+
+<div id="total-servers">
+    <span id="server-count">Loading...</span> servers online
+    <span class="green-dot"></span>
+</div>
+
+<div class="filter-bar">
+    <input type="text" id="searchInput" placeholder="Search servers..." oninput="searchServers()">
+    <select id="filterCategory" onchange="filterServers()">
+        <option value="all">All Categories</option>
+        <option value="smp">SMP</option>
+        <option value="pvp">PvP</option>
+        <option value="lifesteal">Lifesteal</option>
+    </select>
+    <select id="filterSize" onchange="filterServers()">
+        <option value="all">All Sizes</option>
+        <option value="small">Small Servers (0-50 players)</option>
+        <option value="medium">Medium Servers (51-100 players)</option>
+        <option value="large">Large Servers (100+ players)</option>
+    </select>
+</div>
+
+<div id="server-list" class="server-list">
+    <!-- Server cards will be inserted here -->
+</div>
+
+<div class="overlay" id="overlay" onclick="closePopup()"></div>
+<div class="popup" id="popup">
+    <h3>Copy Server IP</h3>
+    <button id="copyBedrock">Copy Bedrock IP</button>
+    <button id="copyJava">Copy Java IP</button>
+</div>
+
+<script>
+    const pinnedServers = {
+        "CloneDupe": "https://hostfinder.top/favicon.png",  // Add more if needed
+    };
+
+    async function fetchServers() {
+        try {
+            const response = await fetch('https://api.minehut.com/servers');
+            const data = await response.json();
+            displayServers(data.servers);
+            updateTotalServers(data.total_servers, data.total_players);
+        } catch (error) {
+            console.error('Error fetching servers:', error);
+        }
+    }
+
+    function displayServers(servers) {
+        const serverList = document.getElementById('server-list');
+        serverList.innerHTML = '';  // Clear previous list
+
+        servers.forEach(server => {
+            const serverCard = document.createElement('div');
+            serverCard.classList.add('server-card');
+
+            // Pinned servers with custom backgrounds
+            if (pinnedServers[server.name]) {
+                serverCard.classList.add(pinnedServers[server.name], 'pinned');
+            }
+
+            // High player count
+            if (server.playerData.playerCount > 100) {
+                serverCard.classList.add('high-players');
+            }
+
+            const serverHeader = `
+                <div class="server-header">${server.name}.minehut.gg</div>
+                <div class="motd">${server.motd || 'No MOTD'}</div>
+                <div><span class="label">Platform:</span> ${server.staticInfo.platform}</div>
+                <div><span class="label">Max Players:</span> ${server.maxPlayers || 'Unlimited'}</div>
+                <div><span class="label">Current Players:</span> <span class="player-count">${server.playerData.playerCount}</span></div>
+                <div><span class="label">Categories:</span> ${server.allCategories.join(', ')}</div>
+                <div><span class="label">Author:</span> ${server.author}</div>
+            `;
+
+            serverCard.innerHTML = serverHeader;
+
+            serverCard.onclick = () => openPopup(server.name);
+            serverList.appendChild(serverCard);
+        });
+    }
+
+    // Search functionality
+    function searchServers() {
+        const query = document.getElementById('searchInput').value.toLowerCase();
+        const servers = document.querySelectorAll('.server-card');
+        servers.forEach(server => {
+            const name = server.querySelector('.server-header').textContent.toLowerCase();
+            server.style.display = name.includes(query) ? 'block' : 'none';
+        });
+    }
+
+    // Filtering functionality
+    function filterServers() {
+        const categoryFilter = document.getElementById('filterCategory').value;
+        const sizeFilter = document.getElementById('filterSize').value;
+        const servers = document.querySelectorAll('.server-card');
+
+        servers.forEach(server => {
+            const categories = server.querySelector('.categories').textContent.split(', ');
+            const playerCount = parseInt(server.querySelector('.player-count').textContent);
+
+            let displayByCategory = categoryFilter === 'all' || categories.includes(categoryFilter);
+            let displayBySize = true;
+
+            if (sizeFilter === 'small' && playerCount > 50) {
+                displayBySize = false;
+            } else if (sizeFilter === 'medium' && (playerCount < 51 || playerCount > 100)) {
+                displayBySize = false;
+            } else if (sizeFilter === 'large' && playerCount <= 100) {
+                displayBySize = false;
+            }
+
+            server.style.display = displayByCategory && displayBySize ? 'block' : 'none';
+        });
+    }
+
+    // Open popup for copying server IP
+    function openPopup(serverName) {
+        document.getElementById('overlay').style.display = 'block';
+        document.getElementById('popup').style.display = 'block';
+
+        const javaIP = `${serverName}.minehut.gg`;
+        const bedrockIP = `bedrock.${serverName}.minehut.gg`;
+
+        document.getElementById('copyJava').onclick = () => copyToClipboard(javaIP);
+        document.getElementById('copyBedrock').onclick = () => copyToClipboard(bedrockIP);
+    }
+
+    // Close the popup
+    function closePopup() {
+        document.getElementById('overlay').style.display = 'none';
+        document.getElementById('popup').style.display = 'none';
+    }
+
+    // Copy IP to clipboard
+    function copyToClipboard(ip) {
+        navigator.clipboard.writeText(ip).then(() => {
+            alert('Copied to clipboard: ' + ip);
+        });
+    }
+
+    // Update the total number of online servers and players
+    function updateTotalServers(totalServers, totalPlayers) {
+        const serverCount = document.getElementById('server-count');
+        serverCount.textContent = `${totalServers} servers (${totalPlayers} players)`;
+    }
+
+    // Initial data fetch
+    fetchServers();
+</script>
+
+</body>
+</html>
