@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Minehut Stats</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="watchdog.css">
+</head>
+<body>
+    <header>
+        Live Minehut Player and Server Stats
+    </header>
+
+    <div class="stats-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Stat</th>
+                    <th>Current</th>
+                    <th>Change</th>
+                    <th>Last Updated</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Total Players</td>
+                    <td id="playerCount">Loading...</td>
+                    <td id="playerChange">Loading...</td>
+                    <td id="playerUpdateTime">Loading...</td>
+                </tr>
+                <tr>
+                    <td>Total Servers</td>
+                    <td id="serverCount">Loading...</td>
+                    <td id="serverChange">Loading...</td>
+                    <td id="serverUpdateTime">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <canvas id="liveStatsChart"></canvas>
+
+    <script src="watchdog.js"></script>
+</body>
+</html>
