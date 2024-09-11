@@ -1,135 +1,223 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const pinnedServers = {
-        // Add pinned servers here if necessary, for custom backgrounds or highlights
-    };
+    const refreshButton = document.getElementById('refreshButton');
+    const toggleAutoRefreshButton = document.getElementById('toggleAutoRefresh');
+    const searchInput = document.getElementById('searchInput');
+    const streakDisplay = document.getElementById('streak-display');
+    const randomServerButton = document.getElementById('findRandomServer');
+    const serverList = document.getElementById('server-list');
+    const overlay = document.getElementById('overlay');
+    const popup = document.getElementById('popup');
+    const randomServerPopup = document.getElementById('random-server-popup');
+    const diceAnimation = document.getElementById('diceAnimation');
+    const randomServerDetails = document.getElementById('random-server-details');
 
-    async function fetchServers() {
+    let autoRefreshEnabled = true; // Enabled by default
+    let autoRefreshInterval;
+    let serverStreaks = {};  // To track streaks for each server
+    let currentPage = 0;  // Track the current page for pagination
+    const serversPerPage = 10;  // Number of servers to fetch per page
+
+    async function fetchServers(page = 0) {
         try {
-            const response = await fetch('https://api.minehut.com/servers');
+            const response = await fetch(`https://api.minehut.com/servers?page=${page}&size=${serversPerPage}`);
             const data = await response.json();
             displayServers(data.servers);
             updateTotalServers(data.total_servers, data.total_players);
+            updateBestStreakServer(data.servers);
+            currentPage = page;  // Update current page
         } catch (error) {
             console.error('Error fetching servers:', error);
         }
     }
 
     function displayServers(servers) {
-        const serverList = document.getElementById('server-list');
-        serverList.innerHTML = ''; // Clear previous list
-
         servers.forEach(server => {
             const serverCard = document.createElement('div');
             serverCard.classList.add('server-card');
 
-            // Pinned servers
-            if (pinnedServers[server.name]) {
-                serverCard.classList.add(pinnedServers[server.name], 'pinned');
-            }
-
-            // Add player count next to the server name
             const playerCount = server.playerData.playerCount || 0;
             const maxPlayers = server.maxPlayers || 'Unlimited';
+            const playerCountText = `${playerCount}/${maxPlayers}`;
+            const motd = formatMiniMessage(server.motd);
+            const iconUrl = server.icon
+                ? `https://minehut-server-icons-live.s3.us-west-2.amazonaws.com/${server.icon}.png`
+                : 'https://minehut-server-icons-live.s3.us-west-2.amazonaws.com/GRASS_BLOCK.png'; // Default logo if none exists
 
-            // Handle player count formatting and downtime
-            let playerCountText = `${playerCount}/${maxPlayers}`;
-            let playerCountClass = 'player-count';
-            if (playerCount < 30) {
-                playerCountClass += ' downtime'; // Flag servers with <30 players
-            }
-
-            // Create the server tile
             const serverHeader = `
-                <div class="server-header">${server.name}.minehut.gg <span class="${playerCountClass}">🙍 ${playerCountText}</span></div>
-                <div class="motd">${formatMOTD(server.motd)}</div>
-                <div><span class="label">Current Players:</span> <span class="player-count">${playerCountText}</span></div>
-                <div><span class="label">Categories:</span> ${server.allCategories.join(', ')}</div>
-                <div><span class="label">Author:</span> ${server.author}</div>
+                <img src="${iconUrl}" alt="${server.name} Logo">
+                <div class="server-header">${server.name}.minehut.gg <span class="player-count">🙍 ${playerCountText}</span></div>
+                <div class="motd">${motd}</div>
+                <div class="server-info">
+                    <p><strong>Author:</strong> ${server.author} (${server.authorRank})</p>
+                    <p><strong>Categories:</strong> ${server.allCategories.join(', ')}</p>
+                    <p><strong>Server Plan:</strong> ${server.staticInfo.rawPlan}</p>
+                    <p><strong>Always Online:</strong> ${server.staticInfo.alwaysOnline ? 'Yes' : 'No'}</p>
+                </div>
             `;
 
             serverCard.innerHTML = serverHeader;
             serverList.appendChild(serverCard);
+
+            trackStreak(server);  // Track streak for each server
         });
     }
 
-    // Function to format MOTD with MiniMessage and HEX color support
-    function formatMOTD(motd) {
-        if (!motd) return 'No MOTD';
-        // Replace MiniMessage formatting with HTML equivalents
-        let formattedMOTD = motd
-            .replace(/<.*?>/g, '') // Handle MiniMessage tags
-            .replace(/<#([0-9a-fA-F]{6})>/g, (match, hex) => `<span style="color:#${hex};">`)
-            .replace(/<\/#>/g, '</span>'); // End color formatting
-        return formattedMOTD;
+    function formatMiniMessage(motd) {
+        return motd
+            .replace(/<rainbow>/g, '<span class="rainbow">')
+            .replace(/<\/rainbow>/g, '</span>')
+            .replace(/<gradient:#([A-Fa-f0-9]{6}):#([A-Fa-f0-9]{6})>/g, (match, color1, color2) => `<span style="background: linear-gradient(to right, #${color1}, #${color2}); -webkit-background-clip: text; color: transparent;">`)
+            .replace(/<\/gradient>/g, '</span>')
+            .replace(/<color:#([A-Fa-f0-9]{6})>/g, (match, color) => `<span style="color: #${color};">`)
+            .replace(/<\/color>/g, '</span>')
+            .replace(/<b>/g, '<strong>').replace(/<\/b>/g, '</strong>')
+            .replace(/<i>/g, '<em>').replace(/<\/i>/g, '</em>')
+            .replace(/<u>/g, '<u>').replace(/<\/u>/g, '</u>')
+            .replace(/<st>/g, '<strike>').replace(/<\/st>/g, '</strike>')
+            .replace(/\n/g, '<br>')  // Handle new lines
+            .replace(/<#([A-Fa-f0-9]{6})>/g, (match, color) => `<span style="color: #${color};">`);
     }
 
-    // Update the total number of online servers and players
     function updateTotalServers(totalServers, totalPlayers) {
         const serverCount = document.getElementById('server-count');
-        const greenDot = document.querySelector('.green-dot');
         serverCount.textContent = `${totalServers} servers (${totalPlayers} players)`;
+    }
 
-        // Check for downtime
-        if (totalPlayers < 30) {
-            greenDot.style.backgroundColor = '#FF0000';
-            greenDot.classList.add('downtime-detected');
-            greenDot.textContent = 'Downtime detected';
+    function trackStreak(server) {
+        const playerCount = server.playerData.playerCount;
+        const serverName = server.name;
+
+        if (!serverStreaks[serverName]) {
+            serverStreaks[serverName] = { streak: 0, lastPlayerCount: playerCount };
+        }
+
+        const currentStreak = serverStreaks[serverName].streak;
+        const lastPlayerCount = serverStreaks[serverName].lastPlayerCount;
+
+        if (playerCount > lastPlayerCount) {
+            serverStreaks[serverName].streak = currentStreak + 1;  // Increase streak
+        } else if (playerCount < lastPlayerCount) {
+            serverStreaks[serverName].streak = 0;  // Reset streak if a player leaves
+        }
+
+        serverStreaks[serverName].lastPlayerCount = playerCount;  // Update last player count
+    }
+
+    function updateBestStreakServer(servers) {
+        let bestServer = null;
+        let bestStreak = 0;
+
+        servers.forEach(server => {
+            const serverName = server.name;
+            const serverStreak = serverStreaks[serverName]?.streak || 0;
+
+            if (serverStreak > bestStreak) {
+                bestStreak = serverStreak;
+                bestServer = server;
+            }
+        });
+
+        if (bestServer) {
+            streakDisplay.innerHTML = `<span class="fire-effect">${bestServer.name}.minehut.gg has a streak of ${bestStreak} 🔥</span>`;
         } else {
-            greenDot.style.backgroundColor = '#4CAF50';
-            greenDot.classList.remove('downtime-detected');
-            greenDot.textContent = '';
+            streakDisplay.innerHTML = '';
         }
     }
 
-    // Search functionality
     function searchServers() {
-        const query = document.getElementById('searchInput').value.toLowerCase();
+        const query = searchInput.value.toLowerCase();
         const servers = document.querySelectorAll('.server-card');
         servers.forEach(server => {
             const name = server.querySelector('.server-header').textContent.toLowerCase();
             server.style.display = name.includes(query) ? 'block' : 'none';
         });
+        stopAutoRefresh();
     }
 
-    // Filtering functionality
-    function filterServers() {
-        const categoryFilter = document.getElementById('filterCategory').value;
-        const sizeFilter = document.getElementById('filterSize').value;
-        const servers = document.querySelectorAll('.server-card');
-
-        servers.forEach(server => {
-            const categories = server.querySelector('.categories').textContent.split(', ');
-            const playerCount = parseInt(server.querySelector('.player-count').textContent.split('/')[0]);
-
-            let displayByCategory = categoryFilter === 'all' || categories.includes(categoryFilter);
-            let displayBySize = true;
-
-            if (sizeFilter === 'small' && playerCount > 50) {
-                displayBySize = false;
-            } else if (sizeFilter === 'medium' && (playerCount < 51 || playerCount > 100)) {
-                displayBySize = false;
-            } else if (sizeFilter === 'large' && playerCount <= 100) {
-                displayBySize = false;
-            }
-
-            server.style.display = displayByCategory && displayBySize ? 'block' : 'none';
-        });
+    function startAutoRefresh() {
+        if (!autoRefreshEnabled) {
+            autoRefreshInterval = setInterval(fetchServers, 1000);
+            toggleAutoRefreshButton.textContent = 'Disable Live Mode';
+            autoRefreshEnabled = true;
+        }
     }
 
-    // Auto-refresh player and server counts every second
-    function autoRefreshData() {
-        setInterval(fetchServers, 1000); // Refresh every 1 second
+    function stopAutoRefresh() {
+        if (autoRefreshEnabled) {
+            autoRefreshInterval = setInterval(fetchServers, 1000);
+            toggleAutoRefreshButton.textContent = 'Enable Live Mode';
+            autoRefreshEnabled = true;
+        }
     }
 
-    // Infinite scrolling to load more servers
-    window.addEventListener('scroll', () => {
-        if (window.innerHeight + window.scrollY >= document.body.offsetHeight) {
-            // Fetch more servers or append servers when user reaches the bottom of the page
-            fetchServers();
+    function showRandomServerPopup(server) {
+        const popup = document.getElementById('random-server-popup');
+        const details = document.getElementById('random-server-details');
+        const diceAnimation = document.getElementById('diceAnimation');
+
+        // Show the popup immediately
+        popup.style.display = 'block';
+        overlay.style.display = 'block';
+
+        // Show dice animation and server details
+        setTimeout(() => {
+            const ctx = diceAnimation.getContext('2d');
+            ctx.clearRect(0, 0, diceAnimation.width, diceAnimation.height);
+            ctx.font = '48px serif';
+            ctx.fillText('https://minehut-server-icons-live.s3.us-west-2.amazonaws.com/GRASS_BLOCK.png', 20, 60);
+
+            setTimeout(() => {
+                details.innerHTML = `<p><strong>${server.name}.minehut.gg</strong></p><p>IP: ${server.name}.minehut.gg</p>`;
+            }, 500); // Delay before showing server details
+
+            // Close popup after 5.5 seconds
+            setTimeout(() => {
+                closeRandomServerPopup();
+            }, 5500);
+        }, 500); // Simulate dice animation duration
+    }
+
+    function closeRandomServerPopup() {
+        document.getElementById('random-server-popup').style.display = 'none';
+        overlay.style.display = 'none';
+    }
+
+    async function findRandomServer() {
+        try {
+            const response = await fetch('https://api.minehut.com/servers');
+            const data = await response.json();
+            const servers = data.servers;
+            const filteredServers = servers.filter(server => server.playerData.playerCount >= 2);
+            const randomServer = filteredServers[Math.floor(Math.random() * filteredServers.length)];
+            showRandomServerPopup(randomServer);
+        } catch (error) {
+            console.error('Error finding random server:', error);
+        }
+    }
+
+    function handleToggleAutoRefresh() {
+        if (autoRefreshEnabled) {
+            stopAutoRefresh();
+        } else {
+            startAutoRefresh();
+        }
+    }
+    
+
+    refreshButton.addEventListener('click', fetchServers);
+    toggleAutoRefreshButton.addEventListener('click', handleToggleAutoRefresh);
+    searchInput.addEventListener('input', searchServers);
+    randomServerButton.addEventListener('click', findRandomServer);
+
+    // Enable auto-refresh by default
+    startAutoRefresh();
+    fetchServers(); // Initial fetch
+
+    // Infinite scroll for loading more servers
+    serverList.addEventListener('scroll', function() {
+        if (serverList.scrollHeight - serverList.scrollTop === serverList.clientHeight) {
+            // Fetch the next page of servers when scrolled to the bottom
+            fetchServers(currentPage + 1);
         }
     });
-
-    // Initialize the app
-    fetchServers();
-    autoRefreshData();
 });
